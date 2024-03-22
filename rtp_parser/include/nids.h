@@ -126,7 +126,8 @@ struct nids_prm
   int n_tcp_streams;
   int n_hosts;
   char *device;
-  char *filename;
+  const char *filename;
+  const char *protocoltype;
   int sk_buff_size;
   int dev_addon;
   void (*syslog) ();
