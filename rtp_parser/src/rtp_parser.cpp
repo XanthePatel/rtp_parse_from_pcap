@@ -2,6 +2,8 @@
 #include <arpa/inet.h>
 
 #include "rtp_parser.h"
+#include <iostream>
+using namespace std;
 
 rtp_parser::stream_map rtp_parser::streams;
 rtp_parser* rtp_parser::instance(unsigned int src_ip, unsigned short src_port, unsigned int dst_ip, unsigned short dst_port)
@@ -80,16 +82,18 @@ void rtp_parser::search_frame(struct timeval *capture_time)
 	switch(state)
 	{
 		case SEARCH_HDR:
-			
-			ret = buffer.kmp_search_ring_buffer();
-			if ( ret == -1)
-			{//head not find
-				buffer.drop_data(buffer.get_data_size());//drop all invalid data
-				return;	//wait next packet
-			}
-			else
-			{// find head
-				buffer.drop_data(ret);	//drop no use data, the frame head is in the front of buffer
+			rpt_pkt_len = buffer.parse_as_ushort(0);
+			COMMON_LOG("rpt_pkt_len : %d",rpt_pkt_len);
+
+			// ret = buffer.kmp_search_ring_buffer();
+			// if ( ret == -1)
+			// {//head not find
+			// 	buffer.drop_data(buffer.get_data_size());//drop all invalid data
+			// 	return;	//wait next packet
+			// }
+			// else
+			// {// find head
+				// buffer.drop_data(1);	//drop no use data, the frame head is in the front of buffer
 				state = BUILD_HDR;
 				rtp_pkt_start_time = *capture_time;
 
@@ -98,12 +102,13 @@ void rtp_parser::search_frame(struct timeval *capture_time)
 					frm_start_time = *capture_time;
 					wait_frame = false;
 				}
-			}
+			// }
 			
 			break;
 		case BUILD_HDR:
-			if (buffer.get_data_size() < TOTAL_HEAD_LEN)
+			if (buffer.get_data_size() < RTP_HEAD_LEN + 2 ) // rtp包前有2个字节表示该rtp包的大小“RFC 4571 packet len”
 			{
+				COMMON_LOG("wait next packet, buffer.get_data_size() : %d",buffer.get_data_size());
 				return;	//wait next packet
 			}
 			else
@@ -115,17 +120,26 @@ void rtp_parser::search_frame(struct timeval *capture_time)
 		case CHECK_HDR:
 
 			//todo convert buffer to rtp_hdr_t struct
-			if (buffer.parse_as_char(1) != 0)
-            {
-				buffer.drop_data(1);
-				state = SEARCH_HDR;
-				break;
-            }
+			cout << "----------------------------------------" << endl;
+
+			COMMON_LOG("buffer.parse_as_char(0): %x",buffer.parse_as_char(0));
+			COMMON_LOG("buffer.parse_as_char(1): %x",buffer.parse_as_char(1));
+			COMMON_LOG("buffer.parse_as_char(2): %x",buffer.parse_as_char(2));
+			// if (buffer.parse_as_char(2) != 0x80)  //rtp包判断，应该取消
+            // {
+			// 	buffer.drop_data(1);
+			// 	state = SEARCH_HDR;
+			// 	break;
+            // }
+			// exit(-1);
+			
+			cout << "11111111111111111111111111111111111111111" << endl;
 
 			if (ssrc == 0)
 			{
-				ssrc = buffer.parse_as_uint(12);
+				ssrc = buffer.parse_as_uint(10);
 				COMMON_LOG("ssrc:%x", ssrc);
+				COMMON_LOG("ssrc:%d", ssrc);
 				COMMON_LOG("ssrc:%x  %x %x %x ", buffer.parse_as_char(0), buffer.parse_as_char(1), buffer.parse_as_char(2), buffer.parse_as_char(3));
 				COMMON_LOG("ssrc:%x  %x %x %x ", buffer.parse_as_char(4), buffer.parse_as_char(5), buffer.parse_as_char(6), buffer.parse_as_char(7));
 				COMMON_LOG("ssrc:%x  %x %x %x ", buffer.parse_as_char(8), buffer.parse_as_char(9), buffer.parse_as_char(10), buffer.parse_as_char(11));
@@ -137,6 +151,8 @@ void rtp_parser::search_frame(struct timeval *capture_time)
 				state = SEARCH_HDR;
 				break;
 			}
+
+exit(-1);
 			rpt_pkt_len = buffer.parse_as_ushort(2);
 			state = BUILD_FRAME;			
 			

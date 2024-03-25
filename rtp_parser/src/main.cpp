@@ -5,6 +5,7 @@
 #include <string>
 
 #include "rtp_parser.h"
+#include "rtsp_parser.h"
 #include "../include/nids.h"
 #include "cmdline.h"
 
@@ -29,6 +30,11 @@ void tcp_resume(struct tcphdr *this_tcphdr, struct ip *this_iphdr, int *resume)
 {
   *resume = NIDS_TCP_RESUME_CLIENT;
 }
+void rtp_tcp_resume(struct tcphdr *this_tcphdr, struct ip *this_iphdr, int *resume)
+{
+  *resume = NIDS_TCP_RESUME_CLIENT;
+}
+
 void tcp_callback(struct tcp_stream *a_tcp, void **this_time_not_needed, struct timeval *capture_time)
 {
   char buf[1024];
@@ -80,6 +86,69 @@ void tcp_callback(struct tcp_stream *a_tcp, void **this_time_not_needed, struct 
         return;
       }
       */
+    rtsp_parser *stream = NULL;
+
+    if (a_tcp->client.count_new)
+    {
+      // new data for client
+      hlf = &a_tcp->client; // from now on, we will deal with hlf var,
+                            // which will point to client side of conn
+      strcat(buf, "(<-)");  // symbolic direction of data
+      stream = rtsp_parser::instance(a_tcp->addr.daddr, a_tcp->addr.dest, a_tcp->addr.saddr, a_tcp->addr.source);
+      stream->put_data((const char *)hlf->data, hlf->count_new, capture_time);
+    }
+    else
+    {
+      hlf = &a_tcp->server; // analogical
+      strcat(buf, "(->)");
+      stream = rtsp_parser::instance(a_tcp->addr.saddr, a_tcp->addr.source, a_tcp->addr.daddr, a_tcp->addr.dest);
+      stream->put_data((const char *)hlf->data, hlf->count_new, capture_time);
+    }
+    // fprintf(stderr,"%s\n",buf); // we print the connection parameters
+    //  (saddr, daddr, sport, dport) accompanied
+    //  by data flow direction (-> or <-)
+  }
+  return;
+}
+
+//RTP协议
+void rtp_tcp_callback(struct tcp_stream *a_tcp, void **this_time_not_needed, struct timeval *capture_time)
+{
+  char buf[1024];
+  strcpy(buf, adres(a_tcp->addr)); // we put conn params into buf
+  if (a_tcp->nids_state == NIDS_JUST_EST || a_tcp->nids_state == NIDS_RESUME)
+  {
+    // connection described by a_tcp is established
+    // here we decide, if we wish to follow this stream
+    // sample condition: if (a_tcp->addr.dest!=23) return;
+    // in this simple app we follow each stream, so..
+    a_tcp->client.collect++; // we want data received by a client
+    a_tcp->server.collect++; // and by a server, too
+
+    // we don't care urgent data
+    // a_tcp->server.collect_urg++;
+    // a_tcp->client.collect_urg++;
+    fprintf(stderr, "%s established\n", buf);
+    return;
+  }
+  if (a_tcp->nids_state == NIDS_CLOSE)
+  {
+    // connection has been closed normally
+    fprintf(stderr, "%s closing\n", buf);
+    return;
+  }
+  if (a_tcp->nids_state == NIDS_RESET)
+  {
+    // connection has been closed by RST
+    fprintf(stderr, "%s reset\n", buf);
+    return;
+  }
+
+  if (a_tcp->nids_state == NIDS_DATA)
+  {
+
+    struct half_stream *hlf;
+
     rtp_parser *stream = NULL;
 
     if (a_tcp->client.count_new)
@@ -98,15 +167,18 @@ void tcp_callback(struct tcp_stream *a_tcp, void **this_time_not_needed, struct 
       stream = rtp_parser::instance(a_tcp->addr.saddr, a_tcp->addr.source, a_tcp->addr.daddr, a_tcp->addr.dest);
       stream->put_data((const char *)hlf->data, hlf->count_new, capture_time);
     }
-    // fprintf(stderr,"%s\n",buf); // we print the connection parameters
-    //  (saddr, daddr, sport, dport) accompanied
-    //  by data flow direction (-> or <-)
+
+    COMMON_LOG("buf: %s", buf);
+    COMMON_LOG("hlf->data: %x", hlf->data);
+
   }
   return;
 }
 
+
+
 // 获取命令行参数
-int GetCmdline(int argc, char *argv[])
+bool GetCmdline(int argc, char *argv[])
 {
   cmdline::parser a;
 
@@ -122,14 +194,14 @@ int GetCmdline(int argc, char *argv[])
   if (argc == 1 || a.exist("help"))
   {
     cerr << a.usage();
-    return 0;
+    return false;
   }
 
   if (!ok)
   {
     cout << a.error() << endl
          << a.usage();
-    return 0;
+    return false;
   }
 
   cout << a.get<string>("type") << ":" << a.get<string>("filename") << endl;
@@ -139,11 +211,17 @@ int GetCmdline(int argc, char *argv[])
 
   nids_params.filename = a.get<string>("filename").c_str();
   nids_params.protocoltype = a.get<string>("type").c_str();
+  return true;
 }
 
 int main(int argc, char *argv[])
 {
-  GetCmdline(argc, argv);
+  if (!GetCmdline(argc, argv))
+  {
+    return 0;
+  }
+  
+  
 
   cout << "protocoltype: " << nids_params.protocoltype << endl;
   cout << "filename: " << nids_params.filename << endl;
@@ -155,17 +233,19 @@ int main(int argc, char *argv[])
     exit(1);
   }
 
-  if (strcmp("rtsp", nids_params.protocoltype))
+  if (0 == strcmp("rtsp", nids_params.protocoltype))
   {
     nids_register_tcp((void(*))tcp_callback);
     nids_register_tcp_resume((void(*))tcp_resume);
+    
   }
-  else if (strcmp("rtp", nids_params.protocoltype))
+  else if (0 == strcmp("rtp", nids_params.protocoltype))
   {
-    /* code */
+    nids_register_tcp((void(*))rtp_tcp_callback);
+    nids_register_tcp_resume((void(*))rtp_tcp_resume);
   }
-
   nids_run();
+  
 
   return 0;
 }

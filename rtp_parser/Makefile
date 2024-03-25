@@ -2,7 +2,7 @@ TARGET=./bin/rtp_parser
 CPP=g++
 CFLAGS	+=  -g -I ./include -DENABLE_TCPREASM
 SRC=./src
-OBJECTS=$(SRC)/rtp_parser.o $(SRC)/dynamic_ring_buffer.o $(SRC)/main.o
+OBJECTS=$(SRC)/rtsp_parser.o $(SRC)/rtp_parser.o $(SRC)/dynamic_ring_buffer.o $(SRC)/main.o
 $(TARGET) : $(OBJECTS)
 	$(CPP) $(OBJECTS)   -g -o $(TARGET) -L./lib/ -lnids -lpcap
 

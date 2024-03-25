@@ -87,11 +87,15 @@ void dynamic_ring_buffer::write_data(const char *payload, unsigned int len)
 }
 
 void dynamic_ring_buffer::drop_data(unsigned int len)
-{
+{	
+	COMMON_LOG("len : %d, data_in_buf: %d, capacity: %d", len, data_in_buf, capacity);
 	len  = (len >= data_in_buf ? data_in_buf : len);
+	COMMON_LOG("new read_ptr + len: %d ", len );
 	
 	read_ptr = ( read_ptr + len ) % capacity;
 	data_in_buf = data_in_buf - len;
+	COMMON_LOG("new data_in_buf: %d ", data_in_buf );
+
 }
 unsigned int dynamic_ring_buffer::get_free_size()
 {
@@ -193,8 +197,9 @@ int dynamic_ring_buffer::kmp_search_ring_buffer()
 
 	while (i < data_in_buf && j < pattern_str_len)  
 	{  
-		if (j == -1 || buf[(read_ptr + i) % capacity] == pattern_str[j])  
+		if (j == -1 || buf[(read_ptr + i) % capacity] == pattern_str[j])  //判断rtsp头的“$”符号，及0x24
 		{  
+			// COMMON_LOG("buf : %x, pattern_str[j]: %x", buf[(read_ptr + i) % capacity], pattern_str[j]);
 			i++;  
 			j++;  
 		}  
@@ -203,9 +208,9 @@ int dynamic_ring_buffer::kmp_search_ring_buffer()
 			j = kmp_array[j];  
 		}  
 	}
-	
+	// COMMON_LOG("( i - j) quyu capacity : %d ", ( i - j) % capacity);
 	if (j == pattern_str_len)	
-		return ( i - j) % capacity;  
+		return ( i - j) % capacity;  // 返回起始码位置
 	else  
 		return -1;	
 }
@@ -345,6 +350,7 @@ unsigned int dynamic_ring_buffer::parse_as_ushort(unsigned int index)
 
 unsigned int dynamic_ring_buffer::parse_continuous_buffer_as_uint(unsigned int index, unsigned int size)
 {
+	COMMON_LOG("sizeof(unsigned int):%d ", sizeof(unsigned int));
 	unsigned int tmp = 0;
 
 	if (data_in_buf < size || index > data_in_buf - size)
