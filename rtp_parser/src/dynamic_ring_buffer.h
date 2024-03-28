@@ -45,6 +45,9 @@ public:
 	//check byte's bit value, the byte's address is (read_ptr + index)
 	bool check_bit_value(unsigned int byte_index, unsigned int bit_pos);
 
+	//读取一个二进制中的数据，从bit_begin_pos读到bit_end_pos
+	unsigned int parse_as_bits(unsigned int byte_index, unsigned int bit_begin_pos, unsigned int bit_end_pos);
+
 	//write the first len bytes to file and drop them
 	void write_to_file( FILE *file, unsigned int len);
 

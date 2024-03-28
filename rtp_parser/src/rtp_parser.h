@@ -90,6 +90,12 @@ private:
 
 	//write frame info to file
 	void write_frm_info();
+
+	//write rtp head to file
+	void write_rtp_head();
+
+	//write ps stream head to file
+	void write_ps_head();
 	unsigned int time_diff(struct timeval *start, struct timeval *end);
 private:
 
@@ -115,11 +121,19 @@ private:
 	bool is_file_created;
 	FILE* dav_file;
 	FILE* parse_file;
+	FILE* rtp_head_file;
+	FILE* ps_head_file;
 	std::string dav_file_name;
 	std::string parse_file_name;
+	std::string rtp_head_file_name;
+	std::string ps_head_file_name;
+	int PaddingCount;
+
+	bool fist_pkg;
 
 	struct timeval rtp_pkt_start_time;
 	struct timeval rtp_pkt_end_time;
+	struct timeval last_rtp_pkt_end_time;
 
 	struct timeval frm_start_time;
 	struct timeval frm_end_time;

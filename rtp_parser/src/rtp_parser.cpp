@@ -32,9 +32,13 @@ rtp_parser::rtp_parser(unsigned int src_ip, unsigned short src_port, unsigned in
 	is_file_created(false), 
 	dav_file(NULL), 
 	parse_file(NULL),
+	rtp_head_file(NULL),
+	ps_head_file(NULL),
 	is_first_frm(true),
 	wait_frame(true),
-	ssrc(0)
+	ssrc(0),
+	fist_pkg(true),
+	PaddingCount(0)
 {
 	buffer.kmp_init("$");
 	//is_big_endian = check_big_endian();
@@ -53,7 +57,8 @@ rtp_parser::rtp_parser(unsigned int src_ip, unsigned short src_port, unsigned in
 	
 	dav_file_name =  "src[" + std::string(inet_ntoa(src)) + "[" + src_port_str + "]]--dst[" + std::string(inet_ntoa(dst)) + "[" + dst_port_str + "]].dav";
 	parse_file_name =  "src[" + std::string(inet_ntoa(src)) + "[" + src_port_str + "]]--dst[" + std::string(inet_ntoa(dst)) + "[" + dst_port_str + "]].txt";
-
+	rtp_head_file_name = "src[" + std::string(inet_ntoa(src)) + "[" + src_port_str + "]]--dst[" + std::string(inet_ntoa(dst)) + "[" + dst_port_str + "]].rtp";
+	ps_head_file_name = "PS-src[" + std::string(inet_ntoa(src)) + "[" + src_port_str + "]]--dst[" + std::string(inet_ntoa(dst)) + "[" + dst_port_str + "]].txt";
 }
 
 rtp_parser::~rtp_parser()
@@ -72,6 +77,9 @@ void rtp_parser::put_data(const char *payload, unsigned int len, struct timeval 
 {
 	buffer.write_data(payload, len);
 	search_frame(capture_time);
+	state = SEARCH_HDR;
+	COMMON_LOG("-----------------------------------------new buffer state : %d",state);
+
 }
 
 void rtp_parser::search_frame(struct timeval *capture_time)
@@ -84,29 +92,45 @@ void rtp_parser::search_frame(struct timeval *capture_time)
 		case SEARCH_HDR:
 			rpt_pkt_len = buffer.parse_as_ushort(0);
 			COMMON_LOG("rpt_pkt_len : %d",rpt_pkt_len);
+			if (buffer.get_data_size() < rpt_pkt_len)
+			{
+				//buffer.drop_data(buffer.get_data_size());//drop all invalid data
+				return;	//wait next packet
+			}
+			
 
-			// ret = buffer.kmp_search_ring_buffer();
-			// if ( ret == -1)
-			// {//head not find
+			// if (buffer.get_data_size() - 2 != rpt_pkt_len)
+			// {
+			// 	//“RFC 4571 packet len”  not find
 			// 	buffer.drop_data(buffer.get_data_size());//drop all invalid data
 			// 	return;	//wait next packet
 			// }
-			// else
-			// {// find head
-				// buffer.drop_data(1);	//drop no use data, the frame head is in the front of buffer
-				state = BUILD_HDR;
-				rtp_pkt_start_time = *capture_time;
 
-				if (wait_frame)
-				{
-					frm_start_time = *capture_time;
-					wait_frame = false;
-				}
+			// find head
+			buffer.drop_data(2); // drop no use data, the frame head is in the front of buffer
+
+			state = BUILD_HDR;
+			if (!fist_pkg)
+			{
+				rtp_pkt_start_time = last_rtp_pkt_end_time;
+			}
+			else
+			{
+				rtp_pkt_start_time = *capture_time;
+			}
+			
+			
+
+			if (wait_frame)
+			{
+				frm_start_time = *capture_time;
+				wait_frame = false;
+			}
 			// }
 			
 			break;
 		case BUILD_HDR:
-			if (buffer.get_data_size() < RTP_HEAD_LEN + 2 ) // rtp包前有2个字节表示该rtp包的大小“RFC 4571 packet len”
+			if (buffer.get_data_size() < RTP_HEAD_LEN  ) // rtp包前有2个字节表示该rtp包的大小“RFC 4571 packet len”
 			{
 				COMMON_LOG("wait next packet, buffer.get_data_size() : %d",buffer.get_data_size());
 				return;	//wait next packet
@@ -125,19 +149,15 @@ void rtp_parser::search_frame(struct timeval *capture_time)
 			COMMON_LOG("buffer.parse_as_char(0): %x",buffer.parse_as_char(0));
 			COMMON_LOG("buffer.parse_as_char(1): %x",buffer.parse_as_char(1));
 			COMMON_LOG("buffer.parse_as_char(2): %x",buffer.parse_as_char(2));
-			// if (buffer.parse_as_char(2) != 0x80)  //rtp包判断，应该取消
-            // {
-			// 	buffer.drop_data(1);
-			// 	state = SEARCH_HDR;
-			// 	break;
-            // }
-			// exit(-1);
+			COMMON_LOG("check_bit_value:%d %d %d %d %d %d %d %d", buffer.check_bit_value(0, 0), buffer.check_bit_value(0, 1), buffer.check_bit_value(0, 2), buffer.check_bit_value(0, 3), buffer.check_bit_value(0, 4), buffer.check_bit_value(0, 5), buffer.check_bit_value(0, 6), buffer.check_bit_value(0, 7));
+			COMMON_LOG("buffer.parse_as_bits(2, 6, 7): %d",buffer.parse_as_bits(0, 6, 7));
+
 			
 			cout << "11111111111111111111111111111111111111111" << endl;
 
 			if (ssrc == 0)
 			{
-				ssrc = buffer.parse_as_uint(10);
+				ssrc = buffer.parse_as_uint(8);
 				COMMON_LOG("ssrc:%x", ssrc);
 				COMMON_LOG("ssrc:%d", ssrc);
 				COMMON_LOG("ssrc:%x  %x %x %x ", buffer.parse_as_char(0), buffer.parse_as_char(1), buffer.parse_as_char(2), buffer.parse_as_char(3));
@@ -145,20 +165,20 @@ void rtp_parser::search_frame(struct timeval *capture_time)
 				COMMON_LOG("ssrc:%x  %x %x %x ", buffer.parse_as_char(8), buffer.parse_as_char(9), buffer.parse_as_char(10), buffer.parse_as_char(11));
 				COMMON_LOG("ssrc:%x  %x %x %x ", buffer.parse_as_char(12), buffer.parse_as_char(13), buffer.parse_as_char(14), buffer.parse_as_char(15));
 			}
-			else if (ssrc != buffer.parse_as_uint(12))
+			else if (ssrc != buffer.parse_as_uint(8))
 			{
 				buffer.drop_data(1);
 				state = SEARCH_HDR;
 				break;
 			}
 
-exit(-1);
-			rpt_pkt_len = buffer.parse_as_ushort(2);
+
+			// rpt_pkt_len = buffer.parse_as_ushort(0);
 			state = BUILD_FRAME;			
 			
 			break;
 		case BUILD_FRAME:
-			if (buffer.get_data_size() < rpt_pkt_len)
+			if (buffer.get_data_size() < rpt_pkt_len)//此处应该再加上一个判断当buffer.get_data_size() > rpt_pkt_len 的情况，进行分包读取处理
 			{
 				return; //wait the frame to be completed
 			}
@@ -183,24 +203,40 @@ exit(-1);
 						exit(1);
 					}
 
+					rtp_head_file = fopen(rtp_head_file_name.c_str(), "wb");
+					if ( rtp_head_file == NULL )
+					{
+						COMMON_LOG("create file[%s] failed!",rtp_head_file_name.c_str());
+						exit(1);
+					}
+
 					is_file_created = true;
 				}
 
-				//we must write frame info before writing this frame to file , 
-				//because write_to_file will drop this frame. 
-				if (buffer.check_bit_value(5, 7))   /* check if the last rtp packet of current frame(MAKER bit) */
+				// we must write frame info before writing this frame to file ,
+				// because write_to_file will drop this frame.
+				COMMON_LOG("check_bit_value check marker :%d %d %d %d %d %d %d %d", buffer.check_bit_value(1, 0), buffer.check_bit_value(1, 1), buffer.check_bit_value(1, 2), buffer.check_bit_value(1, 3), buffer.check_bit_value(1, 4), buffer.check_bit_value(1, 5), buffer.check_bit_value(1, 6), buffer.check_bit_value(1, 7));
+				if (buffer.check_bit_value(1, 7))   /* check if the last rtp packet of current frame(MAKER bit) */
 				{
 					frm_end_time = *capture_time;
 					wait_frame = true;
 					frm_end = true;
+					// exit(-1);
 				}
 				
 				write_frm_info();
 
+				write_rtp_head();
+
+				last_rtp_pkt_end_time = rtp_pkt_end_time;
+				fist_pkg = false;
+
+				// exit(-1);
+
 #ifndef DISABLE_DAV_FILE
 				buffer.write_to_file(dav_file, rpt_pkt_len + sizeof(rtsp_interleaved_frame_hdr));
 #else
-				buffer.drop_data(rpt_pkt_len + sizeof(rtsp_interleaved_frame_hdr));
+				buffer.drop_data(rpt_pkt_len);//2字节为“RFC 4571 packet len”
 #endif
 
 				if (frm_end)
@@ -236,9 +272,9 @@ bool rtp_parser::check_big_endian()
 void rtp_parser::write_frm_info()
 {
 	fprintf(parse_file, "rtp seq:%8hu, Marker:%d, Len:%7u,   Begin_Rcv_Time:%10lu.%6lus,   End_Rcv_Time:%10lu.%6lus,  Cost_Time:%8uus \n", 
-		buffer.parse_as_ushort(6), buffer.check_bit_value(5, 7), rpt_pkt_len, rtp_pkt_start_time.tv_sec, rtp_pkt_start_time.tv_usec, rtp_pkt_end_time.tv_sec, rtp_pkt_end_time.tv_usec, time_diff(&rtp_pkt_start_time, &rtp_pkt_end_time));
+		buffer.parse_as_ushort(2), buffer.check_bit_value(1, 7), rpt_pkt_len, rtp_pkt_start_time.tv_sec, rtp_pkt_start_time.tv_usec, rtp_pkt_end_time.tv_sec, rtp_pkt_end_time.tv_usec, time_diff(&rtp_pkt_start_time, &rtp_pkt_end_time));
 
-	if (buffer.check_bit_value(5, 7))
+	if (buffer.check_bit_value(1, 7))
 	{
 		if (is_first_frm)
 		{
@@ -255,6 +291,27 @@ void rtp_parser::write_frm_info()
 		}
 			
 	}
+}
+
+void rtp_parser::write_rtp_head()
+{
+	fprintf(rtp_head_file, "Version: %d, Padding: %d, Extension: %d, CSRCCount: %d,Marker: %d, PayloadType: %d, SequenceNumber: %d, Timestamp: %d, SSRC: %d",
+			buffer.parse_as_bits(0, 6, 7), buffer.check_bit_value(0, 5), buffer.check_bit_value(0, 4), buffer.parse_as_bits(0, 0, 3), buffer.check_bit_value(1, 7), buffer.parse_as_bits(1, 0, 6),
+			buffer.parse_as_ushort(2), buffer.parse_as_uint(4), buffer.parse_as_uint(8), 0);
+
+	if (buffer.check_bit_value(0, 5))
+	{
+		PaddingCount = buffer.parse_as_char(rpt_pkt_len - 1);
+		fprintf(rtp_head_file, ", PaddingCount: %d, Paddingdata: %d \n",PaddingCount, buffer.parse_as_uint(rpt_pkt_len - PaddingCount));
+	}
+	else
+	{
+		fprintf(rtp_head_file,", PaddingCount: %d \n", PaddingCount);
+	}
+}
+
+void rtp_parser::write_ps_head()
+{
 }
 
 unsigned int rtp_parser::time_diff(struct timeval *start, struct timeval *end)

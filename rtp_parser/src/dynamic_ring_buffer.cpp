@@ -50,9 +50,11 @@ void dynamic_ring_buffer::write_data(const char *payload, unsigned int len)
 	{
 		return;
 	}
-	
+	COMMON_LOG("new tcp len : %d ", len );
 	int add_size =  data_in_buf + len - capacity;
-	
+
+
+	COMMON_LOG("add_size: %d ,data_in_buf: %d ,capacity: %d", add_size, data_in_buf ,capacity );
 	if ( add_size > 0 )
 	{
 		add_buffer(add_size);
@@ -248,6 +250,7 @@ void dynamic_ring_buffer::write_to_file( FILE *file, unsigned int len)
 	
 	read_ptr = ( read_ptr + len ) % capacity;
 	data_in_buf = data_in_buf - len;
+	COMMON_LOG("write len: %d", len);
 	
 }
 
@@ -343,6 +346,26 @@ bool dynamic_ring_buffer::check_bit_value(unsigned int byte_index, unsigned int 
 	return CHECK_BIT(buf[(read_ptr + byte_index) % capacity], bit_pos);
 }
 
+//bit_begin_pos 是低位，bit_end_pos 是高位。
+unsigned int dynamic_ring_buffer::parse_as_bits(unsigned int byte_index, unsigned int bit_begin_pos, unsigned int bit_end_pos)
+{
+
+	if (data_in_buf < 1 || byte_index > data_in_buf - 1 || bit_begin_pos >= 8 || bit_end_pos >= 8)
+	{
+		COMMON_LOG("data_in_buf:%u byte_index:%u bit_begin_pos:%u bit_end_pos:%u", data_in_buf, byte_index, bit_begin_pos, bit_end_pos);
+		return 0;
+	}
+
+	unsigned char byte_value = buf[(read_ptr + byte_index) % capacity];
+	unsigned int mask = (1 << (bit_end_pos - bit_begin_pos + 1)) - 1;	   // 创建一个n位到m位的掩码
+	COMMON_LOG("mask:%d", mask);
+	unsigned int value = (byte_value >> bit_begin_pos) & mask; // 取出n位到m位的数据
+
+	COMMON_LOG("byte_value >> bit_begin_pos:%d", byte_value >> bit_begin_pos);
+	COMMON_LOG("value:%d", value);
+	return value;
+}
+
 unsigned int dynamic_ring_buffer::parse_as_ushort(unsigned int index)
 {
 	return parse_continuous_buffer_as_uint(index, sizeof(unsigned short));
@@ -359,19 +382,25 @@ unsigned int dynamic_ring_buffer::parse_continuous_buffer_as_uint(unsigned int i
 		return 0;
 	}
 
-	/*
+	
 	//we assume the data in buffer is little endian	
-	for( int i = size - 1; i >= 0; i--)
-	{
-		tmp = tmp +(buf[(read_ptr + index + i) % capacity] << (i * 8));
-	}
-	*/
+	// for( int i = size - 1; i >= 0; i--)
+	// {
+	// 	tmp = tmp +(buf[(read_ptr + index + i) % capacity] << (i * 8));
+	// }
+	
 	
 	//we assume the data in buffer is big endian	
-	for(int i = 0; i < size; i++)
+	// for(int i = 0; i < size; i++)
+	// {
+	// 	tmp = buf[(read_ptr + index + i) % capacity] +(tmp << (i * 8));
+	// }
+
+	//以小端方式读取
+	for (int i = 0; i < size; i++)
 	{
-		tmp = buf[(read_ptr + index + i) % capacity] +(tmp << (i * 8));
+		tmp += (buf[(read_ptr + index + size - 1 - i) % capacity] << (i * 8));
 	}
-	
+
 	return tmp;
 }

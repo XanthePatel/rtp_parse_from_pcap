@@ -12,6 +12,7 @@
 using namespace std;
 
 #define int_ntoa(x) inet_ntoa(*((struct in_addr *)&x))
+int i = 0;
 
 // struct tuple4 contains addresses and port numbers of the TCP connections
 // the following auxiliary function produces a string looking like
@@ -111,7 +112,7 @@ void tcp_callback(struct tcp_stream *a_tcp, void **this_time_not_needed, struct 
   return;
 }
 
-//RTP协议
+//RTP over TCP协议
 void rtp_tcp_callback(struct tcp_stream *a_tcp, void **this_time_not_needed, struct timeval *capture_time)
 {
   char buf[1024];
